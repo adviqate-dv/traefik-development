@@ -1,0 +1,23 @@
+# ==========================================
+# System Files (OS specific)
+# ==========================================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# ==========================================
+# Environment Variables & Secrets
+# ==========================================
+.env
+.env.local
+.env.development.local
+*.pem
+*.key
+
+# ==========================================
+# Folders you will recreate
+# ==========================================
+dynamic/
+certs/
+traefikfiles/
