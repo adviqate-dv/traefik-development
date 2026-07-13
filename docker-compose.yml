@@ -8,7 +8,7 @@ services:
 
     networks:
      # Connect to the 'traefik_proxy' overlay network for inter-container communication across nodes
-      - proxy
+      - traefik_proxy
 
     ports:
       - "80:80"
@@ -16,12 +16,24 @@ services:
 
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./dynamic:/dynamic:ro
+
+      # ---------
+      # SELF SIGNGED CERTIFICATES FOR TRAEFIK TLS CONFIGURATION
+      # ---------
+      # Self signed certificates for Traefik TLS configuration
+      - ./dynamic:/etc/traefik/dynamic:ro
+      - ./certs:/certs:ro
+
+
+      # ---------
+      # USING AN EXTERNAL CA (e.g. Smallstep CA) FOR TRAEFIK TLS CONFIGURATION
+      # ---------
       # Map the acme.json database to your traefikfiles directory (Read/Write)
-      - ./traefikfiles/acme.json:/smallstepCA/acme.json
-      
+      #- ./traefikfiles/acme.json:/smallstepCA/acme.json
       # Map your root CA certificate from the certs directory (Read-Only)
-      - ./certs/root_ca.crt:/step-ca/root_ca.crt:ro
+      #- ./certs/root_ca.crt:/step-ca/root_ca.crt:ro
+
+
 
     command:
       # EntryPoints
@@ -32,6 +44,9 @@ services:
       - "--entrypoints.websecure.address=:443"
       - "--entrypoints.websecure.http.tls=true"
 
+      # ---------
+      # SELF SIGNGED CERTIFICATES FOR TRAEFIK TLS CONFIGURATION
+      # ---------
       # Attach the static configuration tls.yaml file that contains the tls configuration settings
       # Comment this out once you don't want to use self-signed certificates anymore and want to use your CA instead.
       - "--providers.file.filename=/dynamic/tls.yaml"
@@ -39,7 +54,7 @@ services:
       # Providers 
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=proxy"
+      - "--providers.docker.network=traefik_proxy"
 
       # API & Dashboard 
       - "--api.dashboard=true"
@@ -73,7 +88,7 @@ services:
       - "traefik.enable=true"
 
       # Dashboard router
-      - "traefik.http.routers.dashboard.rule=Host(`dashboard.traefik.no-clone-traefik.orb.local`)"
+      - "traefik.http.routers.dashboard.rule=Host(`${DASHBOARD_HOST}`)"
       - "traefik.http.routers.dashboard.entrypoints=websecure"
       - "traefik.http.routers.dashboard.service=api@internal"
       - "traefik.http.routers.dashboard.tls=true"
@@ -88,7 +103,7 @@ services:
     container_name: whoami
     restart: unless-stopped
     networks:
-      - proxy
+      - traefik_proxy
     labels:
       # this is telling the app to enable traefik for this container
       - "traefik.enable=true"
@@ -99,5 +114,5 @@ services:
       - "traefik.http.routers.whoami.tls=true"
 
 networks:
-  proxy:
-    name: proxy
+  traefik_proxy:
+    name: traefik_proxy
