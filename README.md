@@ -21,6 +21,7 @@ htpasswd -nb admin "P@ssw0rd" | sed -e 's/\$/\$\$/g'
 
 
 
+
 ---
 
 ### Securing it with SSL
@@ -67,50 +68,69 @@ Under "labels" in the compose
 
 #### Using Let's Encrypt or Your own CA
 
-Make sure to remove all of the items that were setup in the self signed SSL setup, **including the folders in your project file**
 
+Go into the traefik.yaml file in the root of your project folder
 
-Create a folder called "traefikfiles" in your project folder
+and uncomment the "Automated Certificate Engine"
 
-Put a file called "acme.json" in it and chmod 600 the file
-
-Under "volumes" in the compose
-
-
-      # Map the acme.json database to your traefikfiles directory (Read/Write)
-      - ./traefikfiles/acme.json:/traekikfiles/acme.json
-
-
-Put the root CA certificate
-
-Make sure there is a folder called "autocerts" in your project folder
-
-Under "volumes" in the compose
-      # Map your root CA certificate from the certs directory (Read-Only)
-      - ./autocerts/root_ca.crt:/autocerts/root_ca.crt:ro
-
-Under "commands"
-
-``` text
-
-      # ACME configuration
-      # note: this is for when you want to use your own CA
-      # Uncomment when you have a CA that's ready to issue certificates for your domain. If you want to use Let's Encrypt, you can comment these lines out and uncomment the Let's Encrypt lines below.
-
-      # if you want to just use Let's Encrypt, change "smallstepCA" and change to "LetsEncrypt" to keep the naming clean
-      - "--certificatesresolvers.smallstepCA.acme.email=your-email@example.com" # replace with your actual email
-      - "--certificatesresolvers.smallstepCA.acme.storage=/traefikfiles/acme.json"
-      - "--certificatesresolvers.smallstepCA.acme.httpchallenge.entrypoint=web"
-
-      # if you are using your own CA you need to specify these things
-      # Redirect Traefik to your Smallstep ACME provisioner endpoint
-      - "--certificatesresolvers.smallstepCA.acme.caserver=https://yourdomain.local"
-
-      # Tell Traefik to trust your self-signed Smallstep Root CA certificate
-      - "--certificatesresolvers.smallstepCA.acme.cacertificates=/autocerts/root_ca.crt"
-
-```
+Make sure you edit the variables to point to the right server
 
 
 ---
+
+
+
+### Adding Containers to Your Proxy
+
+
+You need to make sure that the container has the same network as your proxy server, so it can see it
+
+! Important
+If you are using a self signed cert for testing, you MUST comment out the "certresolver" line!
+
+``` text
+
+    networks:
+      - traefik_proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami.rule=Host(`whoami.traefik.traefik-development.orb.local`)"
+      - "traefik.http.routers.whoami.entrypoints=websecure"
+      - "traefik.http.routers.whoami.tls=true"
+      - "traefik.http.routers.whoami.tls.certresolver=smallstepCA"
+
+```
+
+Here is the step-by-step breakdown of what each label does for your whoami application container:
+#### 1. The activation switch
+
+* "traefik.enable=true"
+* What it does: This signals Traefik to explicitly monitor this container. Because you have exposedByDefault: false configured, Traefik will ignore this container entirely unless this label is present.
+
+#### 2. The routing rule
+
+* "traefik.http.routers.whoami.rule=Host(\whoami.traefik.traefik-development.orb.local`)"`
+* What it does: This creates a new Router named whoami and assigns it a rule. It tells Traefik: "If a web request comes in and the browser's URL address exactly matches whoami.traefik.traefik-development.orb.local, intercept it and process it through this router."
+
+#### 3. The entrypoint constraint
+
+* "traefik.http.routers.whoami.entrypoints=websecure"
+* What it does: This restricts where this specific router listens. It binds the rule exclusively to your websecure entrypoint (Port 443 / HTTPS). Traffic on this domain hitting unencrypted port 80 will bypass this rule and hit your global HTTPS redirect instead.
+
+#### 4. Enabling encryption
+
+* "traefik.http.routers.whoami.tls=true"
+* What it does: This activates TLS/HTTPS encryption for this web traffic stream. It tells Traefik that it must handle a secure cryptographic handshake with the user's browser before forwarding any data to the underlying application.
+
+#### 5. The certificate solver
+
+* "traefik.http.routers.whoami.tls.certresolver=smallstepCA"
+* What it does: This specifies how Traefik gets the TLS certificate for this domain. It tells Traefik: "Do not look at local files for this domain. Instead, hand this domain name over to the automated smallstepCA certificate resolver we configured. Go fetch a 35-day certificate from our private Smallstep container over the network, save it in acme.json, and renew it automatically when it gets close to expiring."
+
+------------------------------
+####  What happens behind the scenes for this specific setup:
+Because you didn't define an explicit service label (like your dashboard did with service=api@internal), Traefik uses its built-in automation. It checks the container, discovers the whoami image runs on port 80, automatically builds a backend service, and maps your secure router right to it.
+If you are ready to test this entire loop, would you like help setting up a quick curl test command that skips local browser trust warnings so you can verify the automated certificate was successfully issued?
+
+
 

@@ -7,97 +7,43 @@ services:
       - no-new-privileges:true
 
     networks:
-     # Connect to the 'traefik_proxy' overlay network for inter-container communication across nodes
       - traefik_proxy
 
     ports:
       - "80:80"
       - "443:443"
 
+    environment:
+      # Lego still needs this environment variable to validate the TLS handshake!
+      - LEGO_CA_CERTIFICATES=/step-ca/root_ca.crt
+
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-
-      # ---------
-      # SELF SIGNGED CERTIFICATES FOR TRAEFIK TLS CONFIGURATION
-      # ---------
-      # Self signed certificates for Traefik TLS configuration
       - ./dynamic:/etc/traefik/dynamic:ro
       - ./certs:/certs:ro
-
-
-      # ---------
-      # USING AN EXTERNAL CA (e.g. Smallstep CA) FOR TRAEFIK TLS CONFIGURATION
-      # ---------
-      # Map the acme.json database to your traefikfiles directory (Read/Write)
-      #- ./traefikfiles/acme.json:/smallstepCA/acme.json
-      # Map your root CA certificate from the certs directory (Read-Only)
-      #- ./certs/root_ca.crt:/step-ca/root_ca.crt:ro
-
-
-
-    command:
-      # EntryPoints
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
-      - "--entrypoints.websecure.address=:443"
-      - "--entrypoints.websecure.http.tls=true"
+      
+      # 1. MOUNT THE TRAEFIK.YAML CONFIGURATION FILE
+      - ./traefik.yaml:/etc/traefik/traefik.yaml:ro
 
       # ---------
-      # SELF SIGNGED CERTIFICATES FOR TRAEFIK TLS CONFIGURATION
+      # EXTERNAL CA VOLUME MAPPINGS
       # ---------
-      # Attach the static configuration tls.yaml file that contains the tls configuration settings
-      # Comment this out once you don't want to use self-signed certificates anymore and want to use your CA instead.
-      - "--providers.file.filename=/dynamic/tls.yaml"
+      - ./traefikfiles/acme.json:/smallstepCA/acme.json
+      - ./root-ca-data/certs/root_ca.crt:/step-ca/root_ca.crt:ro
 
-      # Providers 
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=traefik_proxy"
+    # The entire "command:" block is removed because traefik.yaml covers it now
 
-      # API & Dashboard 
-      - "--api.dashboard=true"
-      - "--api.insecure=false"
-
-      # Observability 
-      - "--log.level=INFO"
-      - "--accesslog=true"
-      - "--metrics.prometheus=true"
-
-      # ACME configuration
-      # note: this is for when you want to use your own CA
-      # Uncomment when you have a CA that's ready to issue certificates for your domain. If you want to use Let's Encrypt, you can comment these lines out and uncomment the Let's Encrypt lines below.
-
-      # if you want to just use Let's Encrypt, change "smallstepCA" and change to "LetsEncrypt" to keep the naming clean
-      #- "--certificatesresolvers.smallstepCA.acme.email=your-email@example.com" # replace with your actual email
-      #- "--certificatesresolvers.smallstepCA.acme.storage=/smallstepCA/acme.json"
-      #- "--certificatesresolvers.smallstepCA.acme.httpchallenge.entrypoint=web"
-
-      # if you are using your own CA you need to specify these things
-      # Redirect Traefik to your Smallstep ACME provisioner endpoint
-      #- "--certificatesresolvers.smallstepCA.acme.caserver=https://yourdomain.local"
-
-      # Tell Traefik to trust your self-signed Smallstep Root CA certificate
-      #- "--certificatesresolvers.smallstepCA.acme.cacertificates=/autocerts/root_ca.crt"
-
-
-  # Traefik Dynamic configuration via Docker labels
     labels:
-      # Enable self‑routing
       - "traefik.enable=true"
-
-      # Dashboard router
+      # Dashboard routing remains identical via labels
       - "traefik.http.routers.dashboard.rule=Host(`${DASHBOARD_HOST}`)"
       - "traefik.http.routers.dashboard.entrypoints=websecure"
       - "traefik.http.routers.dashboard.service=api@internal"
       - "traefik.http.routers.dashboard.tls=true"
-
-      # Basic‑auth middleware
+      - "traefik.http.routers.dashboard.tls.certresolver=smallstepCA"
       - "traefik.http.middlewares.dashboard-auth.basicauth.users=admin:${DASHBOARD_BASIC_AUTH_HASH}"
       - "traefik.http.routers.dashboard.middlewares=dashboard-auth@docker"
 
-# Whoami application
   whoami:
     image: traefik/whoami
     container_name: whoami
@@ -105,13 +51,11 @@ services:
     networks:
       - traefik_proxy
     labels:
-      # this is telling the app to enable traefik for this container
       - "traefik.enable=true"
-      # this is telling the app to route traffic to the whoami container when the host header matches "whoami.traefik.no-clone-traefik.orb.local"
-      - "traefik.http.routers.whoami.rule=Host(`whoami.traefik.no-clone-traefik.orb.local`)"
-      # this is telling the app to use the entrypoing "websecure" which is the https port 443 based on EntryPoints defined in the traefik service
+      - "traefik.http.routers.whoami.rule=Host(`whoami.traefik.traefik-development.orb.local`)"
       - "traefik.http.routers.whoami.entrypoints=websecure"
       - "traefik.http.routers.whoami.tls=true"
+      - "traefik.http.routers.whoami.tls.certresolver=smallstepCA"
 
 networks:
   traefik_proxy:
